@@ -1,12 +1,14 @@
 # GitHub Agent Backend (FastAPI)
 
 This is a **FastAPI-based backend** for an AI-powered GitHub agent that:
-✅ **Clones repositories** from GitHub.  
-✅ **Parses folders & files** to extract `.py` and `.js` functions.  
-✅ **Generates embeddings** for extracted functions.  
-✅ **Computes similarity scores** for user queries.  
-✅ **Uses an LLM** to explain the most relevant function.  
-✅ **Integrates with a chatbot** to return responses.  
+
+
+ **Clones repositories** from GitHub.  
+ **Parses folders & files** to extract `.py` and `.js` functions.  
+ **Generates embeddings** for extracted functions.  
+ **Computes similarity scores** for user queries.  
+ **Uses an LLM** to explain the most relevant function.  
+ **Integrates with a chatbot** to return responses.  
 
 ---
 
