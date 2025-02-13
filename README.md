@@ -56,7 +56,7 @@ This is a **FastAPI-based backend** for an AI-powered GitHub agent that:
 ### 1️⃣ Clone the Repository  
 ```bash
 git clone https://github.com/yourusername/github-agent-backend.git
-cd github-agent-backend
+cd content
 ```
 
 ### 2️⃣ Install Dependencies  
@@ -71,7 +71,7 @@ GITHUB_ACCESS_TOKEN=your_personal_access_token
 NEO4J_URI=bolt://localhost:7687
 NEO4J_USER=neo4j
 NEO4J_PASSWORD=your_password
-LLM_API_KEY=your_llm_api_key
+GROQ_API_KEY=your_llm_api_key
 ```
 
 ### 4️⃣ Run FastAPI Server  
