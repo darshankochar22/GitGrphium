@@ -1,0 +1,17 @@
+fastapi
+torch
+gitpython
+neo4j
+transformers
+python-dotenv
+langchain-core
+langchain
+langchain-groq
+langgraph
+scikit-learn
+networkx
+matplotlib
+numpy
+pydantic
+typing-extensions
+uvicorn
