@@ -334,8 +334,8 @@ def similarity(user_query, llm):
            template="User query: {user_query}\n\nFunction Code:\n{function_body}\n\nExplain this function based on the user's query."
        )
        
-       chain = LLMChain(llm=llm, prompt=prompt)
-       output = chain.run({"user_query": user_query, "function_body": best_match["body"]})
+       chain = prompt | llm
+       output = chain.invoke({"user_query": user_query, "function_body": best_match["body"]})
        return output
 
 def process_query(user_query, llm, memory):
@@ -344,7 +344,7 @@ def process_query(user_query, llm, memory):
         response = similarity(user_query, llm)
     else:
         chain = ConversationChain(llm=llm, memory=memory)
-        response = chain.run(user_query)
+        response = chain.invoke(user_query)
     return response
 
 
