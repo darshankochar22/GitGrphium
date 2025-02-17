@@ -3,6 +3,7 @@ import json
 import ast
 import torch
 import subprocess
+from urllib.parse import urlparse
 from git import Repo
 from neo4j import GraphDatabase
 from transformers import AutoTokenizer, AutoModel
@@ -33,32 +34,40 @@ from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationChain
+from fastapi import FastAPI, HTTPException, status, Body
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from git import Repo, exc as git_exc
+import logging
 
 load_dotenv()
 app = FastAPI()
-groq_api_key = os.getenv("GROQ_API_KEY")
 
-NEO4J_URI = "neo4j+s://da4f9389.databases.neo4j.io"
-NEO4J_USERNAME = "neo4j"
-NEO4J_PASSWORD = "DzwOi_LChEKK7mniHJDq5f-1a3GW3KSs7r8-vZxuzfw"
+groq_api_key = os.getenv("GROQ_API_KEY")
+NEO4J_URI = os.getenv("NEO4J_URI")
+NEO4J_USERNAME = os.getenv("NEO4J_USERNAME")
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+class RepoURL(BaseModel):
+    repo_url: str
+
+class ChatRequest(BaseModel):
+    message: str
 
 driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USERNAME, NEO4J_PASSWORD))
 
 def clear_neo4j_database(driver):
-    """
-    Deletes all nodes and relationships in the Neo4j database.
-    
-    Parameters:
-    - uri (str): The Neo4j connection URI.
-    - user (str): The Neo4j username.
-    - password (str): The Neo4j password.
-    """
-    #driver = GraphDatabase.driver(uri, auth=(user, password))
     with driver.session() as session:
         session.run("MATCH (n) DETACH DELETE n")
-    
     driver.close()
-    print("Successfully deleted all nodes and relationships from Neo4j.")
 #clear_neo4j_database(driver) 
 
 def clone_repo(repo_url, target_dir_prefix="cloned_repo"):
@@ -68,10 +77,6 @@ def clone_repo(repo_url, target_dir_prefix="cloned_repo"):
     Repo.clone_from(repo_url, target_dir)
     
     return target_dir
-
-repo_url = input("Enter the GitHub repository URL: ").strip()
-cloned_dir = clone_repo(repo_url)
-#cloned_dir = "Attendence_Tracker"
 
 def process_directory(directory, driver, metadata_file='metadata.json', file_storage='storage.json'):
     def create_directory_node(tx, name, path):
@@ -90,7 +95,7 @@ def process_directory(directory, driver, metadata_file='metadata.json', file_sto
 
     def create_function_node(tx, name, args, docstring, file_path, body):
         if docstring is None:
-            docstring = "No docstring provided."  # Provide a default docstring if none exists
+            docstring = "No docstring provided."  
         query = """
         CREATE (func:Function {name: $name, args: $args, docstring: $docstring, file_path: $file_path, body: $body})
         RETURN func
@@ -124,13 +129,10 @@ def process_directory(directory, driver, metadata_file='metadata.json', file_sto
 
     with driver.session() as session:
         for root, dirs, files in os.walk(directory):
-            # Exclude unwanted files and directories
             dirs[:] = [d for d in dirs if d not in ['.git', '.config', '.gitattributes', '.gitignore']]
             files = [f for f in files if f not in ['.git', '.config', '.gitattributes', '.gitignore']]
-            
             root_path = os.path.abspath(root)
             metadata[root_path] = {"directories": dirs, "files": files}
-            
             session.execute_write(create_directory_node, os.path.basename(root), root_path)
             
             for file in files:
@@ -164,41 +166,6 @@ def process_directory(directory, driver, metadata_file='metadata.json', file_sto
         json.dump(file_contents, file_store, indent=4)
     
     print("Metadata and file storage saved.")
-#cloned_dir = "cloned_repo_20250205-123352"    
-process_directory(cloned_dir,driver)
-
-import matplotlib.pyplot as plt
-import networkx as nx
-
-def plot_graph(driver):
-    G = nx.DiGraph()
-    
-    with driver.session() as session:
-        # Fetch nodes
-        nodes = session.run("MATCH (n) RETURN n.name, labels(n), n.path")
-        for record in nodes:
-            name, labels, path = record["n.name"], record["labels(n)"], record["n.path"]
-            node_id = path if path else name  # Fallback to name if path is None
-            if node_id:
-                G.add_node(node_id, label=labels[0], name=name)
-        
-        # Fetch relationships
-        relationships = session.run("MATCH (a)-[r]->(b) RETURN a.path, type(r), b.path")
-        for record in relationships:
-            source, rel_type, target = record["a.path"], record["type(r)"], record["b.path"]
-            if source and target:
-                G.add_edge(source, target, label=rel_type)
-    
-    # Plot the graph
-    plt.figure(figsize=(10, 6))
-    pos = nx.spring_layout(G)
-    labels = nx.get_edge_attributes(G, 'label')
-    nx.draw(G, pos, with_labels=True, node_size=3000, node_color='lightblue', edge_color='gray')
-    nx.draw_networkx_edge_labels(G, pos, edge_labels=labels)
-    plt.title("Neo4j Graph Visualization")
-    plt.show()
-
-#plot_graph(driver)
 
 llm = ChatGroq(
     model_name="llama3-70b-8192",
@@ -240,10 +207,8 @@ def fetch_functions(driver):
                 "body": record["f.body"]
             }
             functions.append(func)
-
+    print("Successfully fetched functions")
     return functions  
-
-function_list = fetch_functions(driver)
 
 def generate_descriptions(function_list):
     descriptions = {}
@@ -252,7 +217,7 @@ def generate_descriptions(function_list):
         code = func['body']  # Function code is stored in 'body' field
         result = chain.invoke({"input": code})
         
-        print("Raw output:", result)  # Debugging, you can remove it later
+        #print("Raw output:", result)  # Debugging, you can remove it later
         
         try:
             descriptions[func['name']] = {
@@ -266,7 +231,7 @@ def generate_descriptions(function_list):
         
         # Adding delay of 1 second between requests
         time.sleep(1)
-
+    print("Successfully generated descriptions")
     return descriptions
 
 tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
@@ -282,7 +247,7 @@ def generate_embeddings(descriptions):
             with torch.no_grad():
                 embedding_vector = model(**tokens).last_hidden_state.mean(dim=1).squeeze().tolist()
             embeddings[name] = embedding_vector
-
+    print("Successfully generated embeddings")
     return embeddings
 
 def store_in_neo4j(function_list, descriptions, embeddings, driver):
@@ -305,16 +270,19 @@ def store_in_neo4j(function_list, descriptions, embeddings, driver):
             )
     print(f"Stored {len(function_list)} functions with descriptions and embeddings in Neo4j.")
 
-descriptions = generate_descriptions(function_list)
-embeddings = generate_embeddings(descriptions)
-store_in_neo4j(function_list, descriptions, embeddings, driver)
+@app.post("/clone_repo")
+async def clone_repo_endpoint(repo: RepoURL):
+    """Endpoint to handle repository cloning and processing"""
+    cloned_dir = clone_repo(repo.repo_url)
+    process_directory(cloned_dir, driver)
+    function_list = fetch_functions(driver)
+    descriptions = generate_descriptions(function_list)
+    embeddings = generate_embeddings(descriptions)
+    store_in_neo4j(function_list,descriptions,embeddings,driver)
+    return {"message": "Repository cloned and processed successfully", "directory": cloned_dir}
 
-logging.basicConfig(level=logging.INFO)
 
-tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
-model = AutoModel.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
-
-def fetch_functions():
+def fetch_functionsx(driver):
     """Fetch stored functions from Neo4j database."""
     with driver.session() as session:
         query = """
@@ -354,21 +322,21 @@ def find_best_match_with_embedding(functions, query):
     return best_match, max_similarity
 
 def similarity(user_query, llm):
-    """Retrieve the most relevant function based on user query and explain it."""
-    functions = fetch_functions()
-    best_match, similarity = find_best_match_with_embedding(functions, user_query)
-    
-    if not best_match:
-        return "I couldn't find a relevant function to explain."
+       """Retrieve the most relevant function based on user query and explain it."""
+       functions = fetch_functionsx(driver)
+       best_match, similarity = find_best_match_with_embedding(functions, user_query)
 
-    prompt = PromptTemplate(
-        input_variables=["user_query", "function_body"],
-        template="User query: {user_query}\n\nFunction Code:\n{function_body}\n\nExplain this function based on the user's query."
-    )
-    
-    chain = LLMChain(llm=llm, prompt=prompt)
-    output = chain.run({"user_query": user_query, "function_body": best_match["body"]})
-    return output
+       if best_match is None:
+           return {"error": "No matching function found."} 
+
+       prompt = PromptTemplate(
+           input_variables=["user_query", "function_body"],
+           template="User query: {user_query}\n\nFunction Code:\n{function_body}\n\nExplain this function based on the user's query."
+       )
+       
+       chain = LLMChain(llm=llm, prompt=prompt)
+       output = chain.run({"user_query": user_query, "function_body": best_match["body"]})
+       return output
 
 def process_query(user_query, llm, memory):
     """Process user query and decide execution flow."""
@@ -379,13 +347,11 @@ def process_query(user_query, llm, memory):
         response = chain.run(user_query)
     return response
 
-if __name__ == "__main__":
-    llm = ChatGroq(model="llama-3.3-70b-versatile")
+
+@app.post("/chat")
+async def chat_endpoint(chat_request: ChatRequest = Body(...)):
     memory = ConversationBufferMemory()
-    while True:
-        user_input = input("User: ")
-        if user_input.lower() in ["quit", "exit", "q"]:
-            print("Goodbye!")
-            break
-        response = process_query(user_input, llm, memory)
-        print("Assistant:", response)
+    llm = ChatGroq(model="llama-3.3-70b-versatile")
+    response = process_query(chat_request.message, llm, memory)
+    #print("Assistant:", response)
+    return {"Assistant" : response}
