@@ -48,9 +48,12 @@ NEO4J_URI = os.getenv("NEO4J_URI")
 NEO4J_USERNAME = os.getenv("NEO4J_USERNAME")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 
+origins = ["http://localhost:3000"]
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -68,10 +71,13 @@ def clear_neo4j_database(driver):
     with driver.session() as session:
         session.run("MATCH (n) DETACH DELETE n")
     driver.close()
+    print("cleared")
+#clear_neo4j_database(driver) 
 
 def clone_repo(repo_url, target_dir_prefix="cloned_repo"):
     timestamp = time.strftime("%Y%m%d-%H%M%S") 
     target_dir = f"{target_dir_prefix}_{timestamp}"
+    print(f"Cloning repository from {repo_url} into {target_dir}...")
     Repo.clone_from(repo_url, target_dir)
     
     return target_dir
@@ -163,6 +169,7 @@ def process_directory(directory, driver, metadata_file='metadata.json', file_sto
     with open(file_storage, "w", encoding="utf-8") as file_store:
         json.dump(file_contents, file_store, indent=4)
     
+    print("Metadata and file storage saved.")
 
 llm = ChatGroq(
     model_name="llama3-70b-8192",
@@ -213,7 +220,9 @@ def generate_descriptions(function_list):
     for func in function_list:
         code = func['body']  
         result = chain.invoke({"input": code})
-    
+        
+        #print("Raw output:", result)  # Debugging, you can remove it later
+        
         try:
             descriptions[func['name']] = {
                 "function_name": result["function_name"],
@@ -226,6 +235,7 @@ def generate_descriptions(function_list):
         
         # Adding delay of 1 second between requests
         time.sleep(1)
+    print("Successfully generated descriptions")
     return descriptions
 
 tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
@@ -241,6 +251,7 @@ def generate_embeddings(descriptions):
             with torch.no_grad():
                 embedding_vector = model(**tokens).last_hidden_state.mean(dim=1).squeeze().tolist()
             embeddings[name] = embedding_vector
+    print("Successfully generated embeddings")
     return embeddings
 
 def store_in_neo4j(function_list, descriptions, embeddings, driver):
@@ -266,6 +277,7 @@ def store_in_neo4j(function_list, descriptions, embeddings, driver):
 @app.post("/clone_repo")
 async def clone_repo_endpoint(repo: RepoURL):
     """Endpoint to handle repository cloning and processing"""
+    clear_neo4j_database(driver) 
     cloned_dir = clone_repo(repo.repo_url)
     process_directory(cloned_dir, driver)
     function_list = fetch_functions(driver)
