@@ -43,10 +43,11 @@ import logging
 load_dotenv()
 app = FastAPI()
 
-groq_api_key = os.getenv("GROQ_API_KEY")
-NEO4J_URI = os.getenv("NEO4J_URI")
-NEO4J_USERNAME = os.getenv("NEO4J_USERNAME")
-NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
+groq_api_key = "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"
+NEO4J_URI = "neo4j+s://da4f9389.databases.neo4j.io"
+NEO4J_URI = "neo4j+s://da4f9389.databases.neo4j.io"
+NEO4J_USERNAME = "neo4j"
+NEO4J_PASSWORD = "DzwOi_LChEKK7mniHJDq5f-1a3GW3KSs7r8-vZxuzfw"
 
 origins = ["http://localhost:3000"]
 
@@ -72,6 +73,11 @@ def clear_neo4j_database(driver):
         session.run("MATCH (n) DETACH DELETE n")
     driver.close()
     print("cleared")
+
+def clear_neo4j_database(driver):
+    with driver.session() as session:
+        session.run("MATCH (n) DETACH DELETE n")
+    driver.close()    
 #clear_neo4j_database(driver) 
 
 def clone_repo(repo_url, target_dir_prefix="cloned_repo"):
@@ -358,5 +364,5 @@ async def chat_endpoint(chat_request: ChatRequest = Body(...)):
     memory = ConversationBufferMemory()
     llm = ChatGroq(model="llama-3.3-70b-versatile")
     response = process_query(chat_request.message, llm, memory)
-    #print("Assistant:", response)
+    print("Assistant:", response)
     return {"Assistant" : response}
